@@ -22,11 +22,28 @@ function returnNumOrientation(face)
     }
 
     if dir[face] then
-        print("Value is:", dir[face])  --> Value is: 1
         facing = dir[face]
     else
         print("Direction not found!")
         return nil
+    end
+end
+
+function setPos(x, y, z, dirName)
+    pos = { x = x, y = y, z = z }
+
+    local dirMap = {
+        north = 1,
+        east = 2,
+        south = 3,
+        west = 4
+    }
+
+    if dirMap[dirName] then
+        facing = dirMap[dirName]
+        returnNumOrientation(dirName) -- optional: rotate turtle physically too
+    else
+        print("Invalid direction:", dirName)
     end
 end
 
@@ -35,7 +52,6 @@ function refuelIfNeeded()
         for slot = 1, 16 do
             turtle.select(slot)
             if turtle.refuel(1) then
-                print("Refueled from slot", slot)
                 return true
             end
         end
@@ -105,11 +121,11 @@ function moveTo(targetX, targetY, targetZ)
         faceDirection(pos.x < targetX and 2 or 4)
         while pos.x ~= targetX do moveForward() end
     end
+    saveData(targetX,targetY,targetZ)
 end
 
 function returnTo(x, y, z)
     moveTo(x, y, z)
-    print("Returned to starting point.")
 end
 
 function mineTo(x, y, z)
@@ -119,9 +135,91 @@ function mineTo(x, y, z)
     end
 end
 
-function mineArea(startPoint, endPoint, turtleStart)
-    pos = { x = turtleStart[1], y = turtleStart[2], z = turtleStart[3] }
+local function locationExists(mined, x, y, z)
+    for _, pos in ipairs(mined) do
+        if pos[1] == x and pos[2] == y and pos[3] == z then
+            return true
+        end
+    end
+    return false
+end
 
+function saveData(x, y, z)
+    -- Load existing data
+    local saveData = {
+        location = {},
+        mined = {}
+    }
+
+    if fs.exists("progress.txt") then
+        local file = fs.open("progress.txt", "r")
+        local content = file.readAll()
+        file.close()
+
+        saveData = textutils.unserialize(content) or saveData
+    end
+
+    -- Update current location
+    --print(facing)
+    saveData.location = {
+        x = x,
+        y = y,
+        z = z,
+        facing = facing
+    }
+
+    -- Only insert if the location is new
+    if not locationExists(saveData.mined, x, y, z) then
+        table.insert(saveData.mined, {x, y, z})
+    end
+
+    -- Save back to file
+    local file = fs.open("progress.txt", "w")
+    file.write(textutils.serialize(saveData))
+    file.close()
+end
+
+
+function loadCoords()
+    if fs.exists("progress.txt") then
+        local file = fs.open("progress.txt", "r")
+        local data = file.readAll()
+        file.close()
+        return textutils.unserialize(data)
+    end
+    return nil
+end
+
+
+function mineArea(startPoint, endPoint)
+    allBlocks = {}
+    minedBlocks = {}
+
+    -- Load previous save
+    local saveData = loadCoords()
+
+    -- Restore turtle position and facing
+    if saveData and saveData.location then
+        local turtleLocation = saveData.location
+
+        moveTo(turtleLocation.x, turtleLocation.y, turtleLocation.z)
+
+        pos.x = turtleLocation.x
+        pos.y = turtleLocation.y
+        pos.z = turtleLocation.z
+
+        local oldFacing = facing
+        local newFacing = turtleLocation.facing
+
+        while oldFacing ~= newFacing do
+            turtle.turnRight()
+            oldFacing = (oldFacing % 4) + 1
+        end
+        facing = newFacing
+ 
+    end
+
+    -- Determine bounds
     local minX = math.min(startPoint[1], endPoint[1])
     local maxX = math.max(startPoint[1], endPoint[1])
     local minY = math.min(startPoint[2], endPoint[2])
@@ -129,23 +227,60 @@ function mineArea(startPoint, endPoint, turtleStart)
     local minZ = math.min(startPoint[3], endPoint[3])
     local maxZ = math.max(startPoint[3], endPoint[3])
 
+    -- Generate all block positions
     for y = maxY, minY, -1 do
         for z = minZ, maxZ do
-            if (z - minZ) % 2 == 0 then
-                for x = minX, maxX do
-                    mineTo(x, y, z)
-                end
-            else
-                for x = maxX, minX, -1 do
-                    mineTo(x, y, z)
-                end
+            for x = minX, maxX do
+                table.insert(allBlocks, {x, y, z})
             end
         end
     end
 
-    -- Return to original position
-    returnTo(turtleStart[1], turtleStart[2], turtleStart[3])
+    -- Remove already mined blocks
+    if saveData and saveData.mined then
+        local newAllBlocks = {}
+
+        for _, block in ipairs(allBlocks) do
+            local x, y, z = block[1], block[2], block[3]
+            if not locationExists(saveData.mined, x, y, z) then
+                table.insert(newAllBlocks, block)
+            end
+        end
+
+        allBlocks = newAllBlocks
+    end
+
+    -- Loop through all remaining blocks
+    for i = #allBlocks, 1, -1 do
+        local x, y, z = table.unpack(allBlocks[i])
+
+        moveTo(x, y, z)
+
+        -- Only dig if y > 0 and not on lowest layer
+        if y > minY then
+            local success, _ = turtle.inspectDown()
+            if success then turtle.digDown() end
+        end
+
+        -- Save that block as mined
+        saveData = saveData or { mined = {}, location = {} }
+        if not locationExists(saveData.mined, x, y, z) then
+            table.insert(saveData.mined, {x, y, z})
+        end
+
+        -- Update current location and facing
+        saveData.location = { x = x, y = y, z = z, facing = facing }
+
+        -- Save progress
+        local file = fs.open("progress.txt", "w")
+        file.write(textutils.serialize(saveData))
+        file.close()
+
+        -- Remove from block list
+        table.remove(allBlocks, i)
+    end
 end
+
 
 -- Message listening loop
 while true do
@@ -156,8 +291,11 @@ while true do
     if type(message) == "table" and message.command and message.data and message.orientation then
         if message.command == "mine" and #message.data == 3 then
             returnNumOrientation(message.orientation)
-            print(facing)
-            mineArea(message.data[1], message.data[2], message.data[3])
+            pos.x = message.data[3][1]
+            pos.y = message.data[3][2]
+            pos.z = message.data[3][3]
+            mineArea(message.data[1], message.data[2])
+
         else
             print("Error: Invalid mine data format.")
         end
