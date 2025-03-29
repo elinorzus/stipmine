@@ -1,4 +1,4 @@
-rednet.open("right") -- Open modem
+rednet.open("change to where your modem is placed has to be left, right, ect..") -- Open modem
 local turtleID = turtle id put here -- Find Turtle
 
 if turtleID then

@@ -1,5 +1,5 @@
 -- Open rednet modem
-rednet.open("left")
+rednet.open("change to where your modem is placed has to be left, right, ect..")
 -- Constants
 local directions = { "north", "east", "south", "west" }
 local directionVectors = {
@@ -13,7 +13,7 @@ local directionVectors = {
 local facing = 1 -- north
 local pos = { x = 0, y = 0, z = 0 }
 local CHEST_LOCATION = {x = 0, y = 0, z = 0}
-
+local send_info = dofile("send_information.lua")
 
 function isInventoryFull()
     for slot = 1, 16 do
@@ -23,7 +23,6 @@ function isInventoryFull()
     end
     return true -- No empty slots
 end
-
 
 function returnNumOrientation(face)
     local dir = {
@@ -60,19 +59,27 @@ function setPos(x, y, z, dirName)
 end
 
 function refuelIfNeeded()
+    local warned = false
+
     while turtle.getFuelLevel() == 0 do 
-        sleep(.1)
+        sleep(0.1)
+        if not warned then
+            print("No fuel available!")
+            send_info.receive("No fuel available!")
+            warned = true
+        end
+
         for slot = 1, 16 do
             turtle.select(slot)
             if turtle.refuel(1) then
+                print("Refueled!")
                 return true
             end
         end
-        print("No fuel available!")
-        return false
     end
     return true
 end
+
 
 -- Movement with tracking
 function turnLeft()
