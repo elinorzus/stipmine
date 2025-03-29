@@ -12,6 +12,18 @@ local directionVectors = {
 -- State
 local facing = 1 -- north
 local pos = { x = 0, y = 0, z = 0 }
+local CHEST_LOCATION = {x = 0, y = 0, z = 0}
+
+
+function isInventoryFull()
+    for slot = 1, 16 do
+        if turtle.getItemCount(slot) == 0 then
+            return false -- There's still room
+        end
+    end
+    return true -- No empty slots
+end
+
 
 function returnNumOrientation(face)
     local dir = {
@@ -48,7 +60,8 @@ function setPos(x, y, z, dirName)
 end
 
 function refuelIfNeeded()
-    if turtle.getFuelLevel() == 0 then 
+    while turtle.getFuelLevel() == 0 do 
+        sleep(.1)
         for slot = 1, 16 do
             turtle.select(slot)
             if turtle.refuel(1) then
@@ -108,7 +121,7 @@ function goDown()
 end
 
 -- Navigation
-function moveTo(targetX, targetY, targetZ)
+function moveTo(targetX, targetY, targetZ, save)
     while pos.y < targetY do goUp() end
     while pos.y > targetY do goDown() end
 
@@ -121,15 +134,18 @@ function moveTo(targetX, targetY, targetZ)
         faceDirection(pos.x < targetX and 2 or 4)
         while pos.x ~= targetX do moveForward() end
     end
-    saveData(targetX,targetY,targetZ)
+
+    if save then
+        saveData(targetX,targetY,targetZ)
+    end
 end
 
 function returnTo(x, y, z)
-    moveTo(x, y, z)
+    moveTo(x, y, z, false)
 end
 
 function mineTo(x, y, z)
-    moveTo(x, y, z)
+    moveTo(x, y, z, true)
     if pos.y > y then
         turtle.digDown()
     end
@@ -191,6 +207,26 @@ function loadCoords()
 end
 
 
+function smartUnload(fuelWhitelist)
+    for slot = 1, 16 do
+        turtle.select(slot)
+        local item = turtle.getItemDetail()
+        if item then
+            if not fuelWhitelist[item.name] then
+                turtle.drop()
+            end
+        end
+    end
+    turtle.select(1)
+end
+
+-- Usage
+local fuelItems = {
+    ["minecraft:coal"] = true,
+    ["minecraft:charcoal"] = true,
+    ["minecraft:lava_bucket"] = true
+}
+
 function mineArea(startPoint, endPoint)
     allBlocks = {}
     minedBlocks = {}
@@ -202,7 +238,7 @@ function mineArea(startPoint, endPoint)
     if saveData and saveData.location then
         local turtleLocation = saveData.location
 
-        moveTo(turtleLocation.x, turtleLocation.y, turtleLocation.z)
+        moveTo(turtleLocation.x, turtleLocation.y, turtleLocation.z, true)
 
         pos.x = turtleLocation.x
         pos.y = turtleLocation.y
@@ -253,8 +289,24 @@ function mineArea(startPoint, endPoint)
     -- Loop through all remaining blocks
     for i = #allBlocks, 1, -1 do
         local x, y, z = table.unpack(allBlocks[i])
+        local lastPlace = {pos.x, pos.y, pos.z}
 
-        moveTo(x, y, z)
+        if isInventoryFull() then
+            -- Save current location
+            local returnPos = {x = pos.x, y = pos.y, z = pos.z}
+        
+            -- Go to chest
+            returnTo(CHEST_LOCATION.x, CHEST_LOCATION.y, CHEST_LOCATION.z)
+        
+            -- Unload non-fuel items
+            smartUnload(fuelItems)
+        
+            -- Go back to where we were
+            returnTo(returnPos.x, returnPos.y, returnPos.z)
+        end
+        
+
+        moveTo(x, y, z, true)
 
         -- Only dig if y > 0 and not on lowest layer
         if y > minY then
@@ -279,6 +331,14 @@ function mineArea(startPoint, endPoint)
         -- Remove from block list
         table.remove(allBlocks, i)
     end
+    
+    returnTo(startPoint[1], startPoint[2], startPoint[3])
+
+    if fs.exists("progress.txt") then
+        fs.delete("progress.txt")
+    else
+        print("No progress file to delete.")
+    end    
 end
 
 
@@ -288,12 +348,13 @@ while true do
     refuelIfNeeded()
     local senderId, message = rednet.receive()
 
-    if type(message) == "table" and message.command and message.data and message.orientation then
+    if type(message) == "table" and message.command and message.data and message.orientation and message.chestLocation then
         if message.command == "mine" and #message.data == 3 then
             returnNumOrientation(message.orientation)
             pos.x = message.data[3][1]
             pos.y = message.data[3][2]
             pos.z = message.data[3][3]
+            CHEST_LOCATION = {x = message.chestLocation[1], y = message.chestLocation[2], z = message.chestLocation[3]}
             mineArea(message.data[1], message.data[2])
 
         else

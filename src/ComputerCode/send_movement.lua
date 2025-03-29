@@ -9,7 +9,8 @@ if turtleID then
             {x, y, z}, -- second location
             {x, y, z} -- turtle location
         },
-        orientation = "north"
+        orientation = "put the current turtle facing",
+        chestLocation = {x, y, z} -- put here the location of one block before the chest
     }
     rednet.send(turtleID, message) 
    
