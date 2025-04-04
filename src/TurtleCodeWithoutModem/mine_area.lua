@@ -17,6 +17,7 @@ local directionVectors = {
 }
 local facing = 1
 local pos = { x = 0, y = 0, z = 0 }
+local send_info = dofile("send_information.lua")
 
 if fs.exists("progress.txt") then
     local file = fs.open("progress.txt", "r")
@@ -71,13 +72,23 @@ function setPos(x, y, z, dirName)
 end
 
 function refuelIfNeeded()
-    while turtle.getFuelLevel() == 0 do
-        print("Refueling...")
+    local warned = false
+
+    while turtle.getFuelLevel() == 0 do 
+        sleep(0.1)
+        if not warned then
+            print("No fuel available!")
+            send_info.receive("No fuel available!")
+            warned = true
+        end
+
         for slot = 1, 16 do
             turtle.select(slot)
-            if turtle.refuel(1) then print("Refueled!") return true end
+            if turtle.refuel(1) then
+                print("Refueled!")
+                return true
+            end
         end
-        sleep(0.1)
     end
     return true
 end
